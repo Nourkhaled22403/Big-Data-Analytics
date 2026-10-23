@@ -1,0 +1,172 @@
+
+MINI MAPREDUCE WORD COUNT PROJECT
+=================================
+
+1. PROJECT OVERVIEW
+-------------------
+This project implements a small MapReduce-style word-count program in Python.
+It reads a folder of text files, treats each text file as one input split, counts
+the words across all splits, and writes the final word counts into two reducer
+output files.
+
+The program uses custom Map, Combine, Partition, Shuffle, Sort, and Reduce logic.
+It does not use Hadoop, PySpark, or a ready-made MapReduce library.
+
+2. INPUT DATA
+-------------
+The default input folder is:
+
+    datasets/text-files
+
+Each .txt file in this folder is processed as a separate split. In this project,
+the five book files book_01.txt through book_05.txt are used as input.
+The file expected_word_count.txt is excluded so that reference results are not
+counted as part of the input.
+
+3. HOW THE PROGRAM WORKS
+------------------------
+
+Step 1: Input
+The main function finds the .txt files in the input directory and sorts their
+file paths. Each file is assigned to one mapper task.
+
+Step 2: Map
+The mapper reads one file, converts the text to lowercase, and extracts words
+using a regular expression. For every extracted word, it emits a key-value pair:
+
+    (word, 1)
+
+For example, the sentence "Apple banana apple" becomes:
+
+    (apple, 1), (banana, 1), (apple, 1)
+
+Lowercasing means that words such as "Apple" and "apple" are counted together.
+
+Step 3: Parallel Mapper Execution
+The program uses Python's ThreadPoolExecutor to schedule one mapper task per
+input file. This allows the mapping tasks to run concurrently. The mapper
+results are collected after the tasks finish.
+
+Threads provide concurrent execution, although Python's Global Interpreter Lock
+means CPU-bound Python code may not use multiple CPU cores in parallel. This is
+a local simulation of MapReduce, not a distributed Hadoop cluster.
+
+Step 4: Local Combine
+Each mapper uses a local dictionary to add together repeated words within its
+own split. This reduces the number of partial records sent to the shuffle stage.
+
+For example, the mapper output:
+
+    (apple, 1), (banana, 1), (apple, 1)
+
+is combined locally into:
+
+    apple  -> 2
+    banana -> 1
+
+Step 5: Partition
+There are exactly two reducers. The partition function chooses a reducer using
+the sum of the character codes in a word, modulo two:
+
+    reducer_id = sum(ord(character) for character in word) % 2
+
+A result of 0 sends the word to Reducer 0; a result of 1 sends it to Reducer 1.
+The function is deterministic, so the same word always goes to the same reducer.
+This is important because all partial counts for a word must meet at one reducer.
+
+Step 6: Shuffle
+The program sends each locally combined word count to its assigned reducer
+partition. Counts for the same word are added together across all input files.
+
+Step 7: Sort
+Each reducer's word-count pairs are sorted alphabetically by word before output
+is written.
+
+Step 8: Reduce and Output
+Two reducer tasks write the final counts to:
+
+    output/reducer0.txt
+    output/reducer1.txt
+
+Each line contains a word, a tab character, and its total count. For example:
+
+    apple    3
+    banana   2
+
+The examples above are illustrative; the actual contents depend on the input
+text files. The two output files together contain the final word counts.
+
+4. RUNNING THE PROGRAM
+----------------------
+Run the following command from the repository root:
+
+    python mapreduce.py
+
+The program uses datasets/text-files as its default input directory and output
+as its output directory.
+
+To specify directories explicitly, run:
+
+    python mapreduce.py --input "datasets/text-files" --output "output"
+
+Note: If the current version of mapreduce.py does not define command-line
+arguments, use the default command `python mapreduce.py`.
+
+5. TESTING AND OBSERVED RUN
+---------------------------
+The program was run successfully on five input splits. The terminal reported:
+
+    Input splits: 5
+    Number of reducers: 2
+
+    [MAP] book_01.txt: 49 tokens, 43 unique words
+    [MAP] book_02.txt: 48 tokens, 40 unique words
+    [MAP] book_03.txt: 45 tokens, 44 unique words
+    [MAP] book_04.txt: 46 tokens, 44 unique words
+    [MAP] book_05.txt: 47 tokens, 44 unique words
+
+The total number of tokens reported by the five mappers was 235. The shuffle
+stage reported 91 unique words for Reducer 0 and 91 unique words for Reducer 1.
+The program then created both reducer output files and reported successful
+completion.
+
+The order of mapper log messages may vary because mapper tasks run concurrently.
+The observed counts are from the successful run; rerun the program if you need
+to capture a fresh terminal screenshot.
+
+6. OUTPUT FILES
+---------------
+- output/reducer0.txt: final counts for words assigned to Reducer 0.
+- output/reducer1.txt: final counts for words assigned to Reducer 1.
+
+A word appears in only one reducer file because partitioning assigns each word
+to exactly one reducer. To inspect the results, open both files in VS Code.
+
+7. REQUIREMENTS CHECK
+---------------------
+- Input is a folder of text files.
+- Each text file is treated as one split.
+- Each mapper emits (word, 1) pairs.
+- Mapper tasks are scheduled concurrently, one per split.
+- Each mapper performs local combining.
+- A custom partition function sends each word to one of two reducers.
+- The shuffle stage groups partial counts by reducer and word.
+- Each reducer's records are sorted.
+- Two reducer output files are written.
+- The implementation uses custom Python MapReduce logic.
+
+8. LIMITATIONS
+--------------
+This is an educational, single-machine MapReduce simulation. It does not
+implement fault tolerance, distributed storage, network transfer, or a Hadoop
+cluster. ThreadPoolExecutor is used for concurrent mapper and reducer tasks.
+
+9. PROJECT FILES
+----------------
+- mapreduce.py: implementation of the MapReduce workflow.
+- datasets/text-files/: input text files.
+- output/reducer0.txt: output produced by Reducer 0.
+- output/reducer1.txt: output produced by Reducer 1.
+- README.md or this explanation file: project documentation.
+
+END
